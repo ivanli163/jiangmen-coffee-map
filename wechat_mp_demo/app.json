@@ -1,0 +1,15 @@
+{
+  "pages": [
+    "pages/coffee_map/coffee_map",
+    "pages/index/index",
+    "pages/navigation/index"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#1a1a1a",
+    "navigationBarTitleText": "江门咖啡地图 5.0",
+    "navigationBarTextStyle": "white"
+  },
+  "lazyCodeLoading": "requiredComponents",
+  "sitemapLocation": "sitemap.json"
+}

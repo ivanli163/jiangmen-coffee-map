@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>江门咖啡地图 - 管理后台 CMS</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; display: flex; height: 100vh; overflow: hidden; }
+        
+        /* Tag Chips */
+        .tag-chips-container { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; }
+        .tag-chip { 
+            padding: 4px 10px; 
+            border-radius: 16px; 
+            font-size: 12px; 
+            cursor: pointer; 
+            border: 1px solid #ddd; 
+            background: #f8f9fa; 
+            color: #333;
+            user-select: none;
+            transition: all 0.2s;
+        }
+        .tag-chip:hover { opacity: 0.8; }
+        .tag-chip.selected { 
+            border-color: transparent; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            font-weight: 500;
+        }
+        
+        /* Layout */
+        #sidebar { width: 400px; background: #f8f9fa; border-right: 1px solid #ddd; display: flex; flex-direction: column; box-shadow: 2px 0 5px rgba(0,0,0,0.05); z-index: 1000; }
+        #map-container { flex: 1; position: relative; }
+        #map { width: 100%; height: 100%; background: #222; }
+
+        /* Tabs */
+        .tabs { display: flex; border-bottom: 1px solid #ddd; background: white; }
+        .tab { flex: 1; padding: 15px; text-align: center; cursor: pointer; font-weight: 600; color: #666; transition: 0.2s; }
+        .tab.active { color: #007bff; border-bottom: 2px solid #007bff; background: #f0f7ff; }
+        
+        /* Panel Content */
+        .panel { display: none; flex: 1; overflow-y: auto; padding: 20px; }
+        .panel.active { display: block; }
+        
+        /* Components */
+        .section { margin-bottom: 25px; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        h2 { font-size: 16px; margin-top: 0; color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        
+        label { display: block; margin: 10px 0 5px; font-size: 13px; color: #555; font-weight: 500; }
+        input[type="text"], input[type="number"], select, textarea { 
+            width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;
+        }
+        textarea { resize: vertical; min-height: 60px; }
+        
+        .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; transition: 0.2s; }
+        .btn-primary { background: #007bff; color: white; width: 100%; }
+        .btn-primary:hover { background: #0056b3; }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn-danger { background: #dc3545; color: white; width: 100%; margin-top: 10px; }
+        
+        .coord-display { background: #e9ecef; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 12px; margin-bottom: 10px; text-align: center; color: #495057; }
+        
+        /* Shop List */
+        .shop-item { padding: 10px; border: 1px solid #eee; margin-bottom: 8px; border-radius: 4px; cursor: pointer; transition: 0.2s; display: flex; align-items: flex-start; }
+        .shop-item:hover { background: #f8f9fa; border-color: #cce5ff; }
+        .shop-item.selected { background: #e7f1ff; border-color: #b8daff; }
+        /* .shop-thumb { width: 40px; height: 40px; background: #ddd; border-radius: 4px; margin-right: 10px; object-fit: cover; } */
+        .shop-info { flex: 1; overflow: hidden; }
+        .shop-name { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+        .shop-sub { font-size: 12px; color: #888; margin-bottom: 2px;}
+        .shop-detail-line { font-size: 12px; color: #555; display: block; margin-top: 2px; }
+        
+        .action-bar { display: flex; gap: 10px; margin-bottom: 15px; }
+        
+        /* Map Markers */
+        .region-marker { text-align: center; }
+        .region-dot { width: 20px; height: 20px; background: rgba(255, 0, 0, 0.6); border-radius: 50%; border: 2px solid white; margin: 0 auto; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+        .region-label { color: white; text-shadow: 0 0 4px black; font-size: 12px; margin-top: 5px; font-weight: bold; }
+        
+        .shop-marker { width: 12px; height: 12px; background: #d4a373; border: 2px solid white; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.5); }
+        
+        /* Image Preview */
+        #imgPreview { width: 100%; height: 150px; background: #eee; margin-top: 5px; border-radius: 4px; object-fit: cover; display: none; }
+        #imgPreview.show { display: block; }
+
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab('map')">地图与区域</div>
+        <div class="tab" onclick="switchTab('shops')">商家管理</div>
+        <div class="tab" onclick="switchTab('tags')">标签管理</div>
+    </div>
+
+    <!-- Panel 1: Map & Regions -->
+    <div id="panel-map" class="panel active">
+        <div class="section">
+            <h2>1. 坐标拾取器</h2>
+            <div class="coord-display" id="currentCoord">点击地图获取坐标</div>
+            <p style="font-size: 12px; color: #666; margin: 0;">点击地图任意位置，坐标将显示在上方。</p>
+        </div>
+
+        <div class="section">
+            <h2>2. 区域编辑</h2>
+            <label>选择区域</label>
+            <select id="regionSelect" onchange="loadRegionData()">
+                <option value="">-- 请选择 --</option>
+            </select>
+            
+            <label>区域名称</label>
+            <input type="text" id="regionName">
+            
+            <label>中心坐标 [Y, X]</label>
+            <div style="display: flex; gap: 5px;">
+                <input type="text" id="regionCoords" placeholder="2400, 1500">
+                <button class="btn btn-secondary" style="width: auto;" onclick="useCurrentCoord('regionCoords')">填入</button>
+            </div>
+            
+            <button class="btn btn-primary" style="margin-top: 15px;" onclick="saveRegion()">保存区域</button>
+        </div>
+
+        <div class="section">
+            <h2>3. 地图更新</h2>
+            <input type="file" id="mapUpload" accept="image/*">
+            <button class="btn btn-primary" style="margin-top: 10px;" onclick="uploadMap()">上传并重切片</button>
+            <div id="uploadStatus" style="font-size: 12px; margin-top: 5px; color: #666;"></div>
+        </div>
+        
+        <div class="section">
+             <a href="/output_jiangmen/coffee_map.html" target="_blank" style="text-decoration: none; color: #007bff; font-size: 14px;">预览前端页面 -></a>
+        </div>
+    </div>
+
+    <!-- Panel 2: Shops -->
+    <div id="panel-shops" class="panel">
+        <div class="tabs" style="margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px;">
+            <div class="tab active" id="tab-all" onclick="filterShopList('all')" style="padding: 10px;">全部</div>
+            <div class="tab" id="tab-unlocated" onclick="filterShopList('unlocated')" style="padding: 10px;">待定位</div>
+        </div>
+
+        <div class="action-bar" style="flex-wrap: wrap;">
+            <button class="btn btn-primary" onclick="showShopForm(null)">+ 新增商家</button>
+            <button class="btn btn-secondary" onclick="refreshShops()">刷新列表</button>
+            
+            <!-- 搜索框 -->
+            <input type="text" id="shopSearchInput" placeholder="搜索商家 (名称/地址/标签)..." oninput="renderShopList()" style="width: 200px; margin-left: auto;">
+            
+            <!-- 导入导出 -->
+            <button class="btn btn-secondary" onclick="exportShops()" title="导出为 Excel">导出</button>
+            <button class="btn btn-secondary" onclick="triggerImport()" title="导入 Excel">导入</button>
+            <input type="file" id="importFile" accept=".xlsx" style="display:none;" onchange="importShops(this)">
+        </div>
+        
+        <!-- Shop List -->
+        <div id="shopListContainer">
+            <!-- JS populated -->
+        </div>
+        
+        <!-- Shop Edit Form (Modal-like overlay or replace list) -->
+        <div id="shopForm" style="display: none; background: white; padding-top: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2 style="margin:0; border:none;">编辑商家</h2>
+                <button class="btn btn-secondary" style="width: auto; padding: 4px 10px;" onclick="hideShopForm()">返回列表</button>
+            </div>
+            
+            <input type="hidden" id="shopId">
+            
+            <label>店铺名称 *</label>
+            <input type="text" id="shopName">
+            
+            <label>所属区域 *</label>
+            <select id="shopRegion"></select>
+            
+            <label>店铺图片</label>
+            <input type="file" id="shopImgUpload" accept="image/*" onchange="uploadShopImage()">
+            <input type="hidden" id="shopImgUrl">
+            <img id="imgPreview" src="">
+            
+            <label>位置坐标 (X, Y)</label>
+            <div style="display: flex; gap: 5px;">
+                <input type="number" id="shopX" placeholder="X">
+                <input type="number" id="shopY" placeholder="Y">
+                <button class="btn btn-secondary" style="width: auto;" onclick="startPickCoord()">拾取</button>
+            </div>
+            <div id="pickingTip" style="display:none; color: green; font-size: 12px; margin-top: 2px;">请点击地图...</div>
+            
+            <div class="section" style="border: 1px solid #eee; padding: 10px; margin: 10px 0; background: #f9f9f9;">
+                <h3 style="margin-top:0; font-size:14px;">小程序卡片信息管理</h3>
+                
+                <label>标签 (最多选3个)</label>
+                <div id="shopTagChips" class="tag-chips-container">
+                    <!-- JS populated chips -->
+                </div>
+                <input type="hidden" id="shopTag">
+                
+                <label>描述</label>
+                <textarea id="shopDesc"></textarea>
+            </div>
+            
+            <label>评分 (0.0 - 5.0)</label>
+            <input type="text" id="shopRating">
+            
+            <label>地址</label>
+            <input type="text" id="shopAddress">
+
+            <label>电话</label>
+            <input type="text" id="shopPhone">
+
+            <label>人均价格</label>
+            <input type="text" id="shopPrice">
+
+            <label>营业时间</label>
+            <input type="text" id="shopOpenHours">
+
+            <label>真实经纬度 (Lat, Lng) - 仅展示</label>
+            <div style="display: flex; gap: 5px;">
+                <input type="text" id="shopLat" placeholder="Lat" readonly style="background: #f8f9fa;">
+                <input type="text" id="shopLng" placeholder="Lng" readonly style="background: #f8f9fa;">
+            </div>
+            
+            <label>描述</label>
+            <textarea id="shopDesc"></textarea>
+            
+            <button class="btn btn-primary" style="margin-top: 20px;" onclick="saveShop()">保存商家</button>
+            <button class="btn btn-danger" id="btnDeleteShop" onclick="deleteShop()">删除商家</button>
+        </div>
+    </div>
+
+    <!-- Panel 3: Tags -->
+    <div id="panel-tags" class="panel">
+        <div class="section">
+            <h2>标签列表</h2>
+            <div id="tagListContainer">
+                <!-- JS populated -->
+            </div>
+            <button class="btn btn-primary" onclick="showTagForm(null)">+ 新增标签</button>
+        </div>
+
+        <div id="tagForm" style="display: none; background: white; padding: 15px; border: 1px solid #ddd; margin-top: 15px; border-radius: 8px;">
+            <h3 style="margin-top: 0;">编辑标签</h3>
+            <input type="hidden" id="tagId">
+            
+            <label>标签名称</label>
+            <input type="text" id="tagName" placeholder="如: 网红店">
+            
+            <label>文字颜色</label>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <input type="color" id="tagColor" style="width: 50px; height: 30px; padding: 0;" oninput="document.getElementById('tagColorText').value = this.value">
+                <input type="text" id="tagColorText" placeholder="#ffffff" onchange="updateColorFromText('tagColor', this)">
+            </div>
+
+            <label>背景颜色</label>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <input type="color" id="tagBgColor" style="width: 50px; height: 30px; padding: 0;" oninput="document.getElementById('tagBgColorText').value = this.value">
+                <input type="text" id="tagBgColorText" placeholder="#ff0000" onchange="updateColorFromText('tagBgColor', this)">
+            </div>
+            
+            <div style="margin-top: 15px; display: flex; gap: 10px;">
+                <button class="btn btn-primary" onclick="saveTag()">保存</button>
+                <button class="btn btn-secondary" onclick="hideTagForm()">取消</button>
+                <button class="btn btn-danger" id="btnDeleteTag" onclick="deleteTag()" style="margin-top:0;">删除</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<div id="map-container">
+    <div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<script>
+    let map, maxZoom, imgWidth, imgHeight;
+    let currentMarker = null;
+    let pickingMode = false; // 是否处于商家坐标拾取模式
+    let regionsData = [];
+    let shopsData = {};
+    let tagsData = [];
+    
+    // 初始化
+    function getImageUrl(url) {
+        if (!url) return '';
+        if (url.startsWith('http')) return url;
+        
+        // --- 适配微信云托管对象存储 ---
+        // 务必替换下方的域名为您自己的环境域名！
+        const COS_HOST = 'https://prod-9g8c363qb1f99532.tcloudbaseapp.com'; 
+
+        // 如果是 /server/uploads/ 开头的路径，说明是上传的图片
+        if (url.includes('server/uploads')) {
+            // 如果当前是本地环境 (127.0.0.1 或 localhost)，仍然尝试本地访问 (以便开发)
+            if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
+                 // 保持原样，走 Flask 静态文件服务
+                 // 如果 url 没有以 / 开头，补上
+                 return url.startsWith('/') ? url : '/' + url;
+            } else {
+                 // 线上环境：替换为 COS 域名
+                 // 确保 url 开头没有 / (如果 COS_HOST 结尾没 /)
+                 const cleanUrl = url.startsWith('/') ? url : '/' + url;
+                 return COS_HOST + cleanUrl;
+            }
+        }
+        
+        return url;
+    }
+
+    async function init() {
+        // 1. Config
+        const configRes = await fetch('/api/config');
+        const config = await configRes.json();
+        
+        imgWidth = parseInt(config.imgWidth);
+        imgHeight = parseInt(config.imgHeight);
+        maxZoom = parseInt(config.maxZoom);
+        
+        // 2. Map
+        map = L.map('map', {
+            minZoom: 0,
+            maxZoom: maxZoom,
+            crs: L.CRS.Simple,
+            attributionControl: false
+        });
+
+        const southWest = map.unproject([0, imgHeight], maxZoom);
+        const northEast = map.unproject([imgWidth, 0], maxZoom);
+        const bounds = new L.LatLngBounds(southWest, northEast);
+
+        // 使用相对路径加载瓦片，因为 admin.html 是通过 Flask 模板渲染的
+        // 确保使用与 coffee_map.html 一致的路径逻辑
+        L.tileLayer('/output_jiangmen/{z}/{x}/{y}.png', {
+            minZoom: 0,
+            maxZoom: maxZoom,
+            tileSize: 256,
+            tms: false,
+            noWrap: true,
+            bounds: bounds
+        }).addTo(map);
+
+        map.setMaxBounds(bounds);
+        map.setView(bounds.getCenter(), 2);
+
+        // 3. Events
+        map.on('click', onMapClick);
+        
+        // 4. Load Data
+        await loadData();
+    }
+
+    async function loadData() {
+        try {
+            const res = await fetch('/api/data');
+            const data = await res.json();
+            regionsData = data.regions || [];
+            shopsData = data.shops || {};
+            tagsData = data.tags || [];
+            
+            // Render Regions on Map
+            renderMapMarkers();
+            
+            // Populate Selects
+            const regionSelect = document.getElementById('regionSelect');
+            const shopRegion = document.getElementById('shopRegion');
+            if (regionSelect) regionSelect.innerHTML = '<option value="">-- 请选择 --</option>';
+            if (shopRegion) shopRegion.innerHTML = '';
+            
+            regionsData.forEach(r => {
+                // Region Select
+                if (regionSelect) {
+                    const opt = document.createElement('option');
+                    opt.value = r.id;
+                    opt.innerText = `${r.name} (${r.id})`;
+                    regionSelect.appendChild(opt);
+                }
+                
+                // Shop Region Select
+                if (shopRegion) {
+                    const opt2 = document.createElement('option');
+                    opt2.value = r.id;
+                    opt2.innerText = r.name;
+                    shopRegion.appendChild(opt2);
+                }
+            });
+
+            // Populate Shop Tag Select
+            populateShopTagSelect();
+            
+            // Render Shop List
+            renderShopList();
+            renderTagList();
+        } catch (e) {
+            console.error("Load data failed:", e);
+            alert("数据加载失败: " + e.message);
+        }
+    }
+    
+    function renderMapMarkers() {
+        // Clear existing
+        map.eachLayer(layer => {
+            if (layer instanceof L.Marker && layer !== currentMarker) {
+                map.removeLayer(layer);
+            }
+        });
+        
+        // Regions
+        regionsData.forEach(region => {
+            const point = map.unproject([region.coords[1], region.coords[0]], maxZoom);
+            const icon = L.divIcon({
+                className: 'region-marker',
+                html: `<div class="region-dot"></div><div class="region-label">${region.name}</div>`,
+                iconSize: [60, 40],
+                iconAnchor: [30, 20]
+            });
+            L.marker(point, {icon: icon}).addTo(map).bindPopup(`区域: ${region.name}`);
+        });
+        
+        // Shops (Dots)
+        Object.values(shopsData).forEach(list => {
+            list.forEach(shop => {
+                if (shop.coord_x && shop.coord_y) {
+                    const point = map.unproject([shop.coord_y, shop.coord_x], maxZoom);
+                    const icon = L.divIcon({ className: 'shop-marker' });
+                    L.marker(point, {icon: icon}).addTo(map).bindPopup(`商家: ${shop.name}`);
+                }
+            });
+        });
+    }
+
+    function onMapClick(e) {
+        const point = map.project(e.latlng, maxZoom);
+        const x = Math.round(point.x);
+        const y = Math.round(point.y);
+        const coordStr = `${y}, ${x}`; // Display as [Y, X] for consistency with old habit, but store separately
+        
+        // Global Display
+        document.getElementById('currentCoord').innerText = `选中坐标: X=${x}, Y=${y}`;
+        
+        // Temp Marker
+        if (currentMarker) map.removeLayer(currentMarker);
+        currentMarker = L.marker(e.latlng).addTo(map);
+        
+        // Logic for picking
+        if (pickingMode) {
+            document.getElementById('shopX').value = x;
+            document.getElementById('shopY').value = y;
+            pickingMode = false;
+            document.getElementById('pickingTip').style.display = 'none';
+        }
+    }
+    
+    // --- Tabs ---
+    function switchTab(tabName) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        
+        document.querySelector(`.tab[onclick="switchTab('${tabName}')"]`).classList.add('active');
+        document.getElementById(`panel-${tabName}`).classList.add('active');
+
+        if (tabName === 'tags') {
+            renderTagList();
+        }
+    }
+
+    // --- Tag Logic ---
+    function populateShopTagSelect() {
+        // Updated to populate Chips instead of Select
+        const container = document.getElementById('shopTagChips');
+        if (!container) return;
+        container.innerHTML = '';
+        
+        tagsData.forEach(tag => {
+            const chip = document.createElement('div');
+            chip.className = 'tag-chip';
+            chip.innerText = tag.name;
+            chip.dataset.value = tag.name;
+            chip.onclick = () => toggleShopTag(chip);
+            container.appendChild(chip);
+        });
+    }
+
+    function toggleShopTag(chip) {
+        const value = chip.dataset.value;
+        const input = document.getElementById('shopTag');
+        let currentTags = input.value ? input.value.split(',').map(t => t.trim()).filter(t => t) : [];
+        
+        if (currentTags.includes(value)) {
+            // Remove
+            currentTags = currentTags.filter(t => t !== value);
+            chip.classList.remove('selected');
+            chip.style.backgroundColor = '#f8f9fa';
+            chip.style.color = '#333';
+        } else {
+            // Add (Max 3)
+            if (currentTags.length >= 3) {
+                alert('最多只能选择3个标签');
+                return;
+            }
+            currentTags.push(value);
+            chip.classList.add('selected');
+            // Apply tag colors
+            const tagData = tagsData.find(t => t.name === value);
+            if (tagData) {
+                chip.style.backgroundColor = tagData.bg_color;
+                chip.style.color = tagData.color;
+            }
+        }
+        
+        input.value = currentTags.join(',');
+    }
+    
+    function updateShopTagChips() {
+        const input = document.getElementById('shopTag');
+        const currentTags = input.value ? input.value.split(',').map(t => t.trim()) : [];
+        
+        const chips = document.querySelectorAll('#shopTagChips .tag-chip');
+        chips.forEach(chip => {
+            const val = chip.dataset.value;
+            if (currentTags.includes(val)) {
+                chip.classList.add('selected');
+                const tagData = tagsData.find(t => t.name === val);
+                if (tagData) {
+                    chip.style.backgroundColor = tagData.bg_color;
+                    chip.style.color = tagData.color;
+                }
+            } else {
+                chip.classList.remove('selected');
+                chip.style.backgroundColor = '#f8f9fa';
+                chip.style.color = '#333';
+            }
+        });
+    }
+
+    function renderTagList() {
+        const container = document.getElementById('tagListContainer');
+        container.innerHTML = '';
+        if (tagsData.length === 0) {
+            container.innerHTML = '<div style="color:#888;">暂无标签</div>';
+            return;
+        }
+        
+        tagsData.forEach(tag => {
+            const item = document.createElement('div');
+            item.className = 'shop-item';
+            item.style.alignItems = 'center';
+            item.onclick = () => showTagForm(tag);
+            
+            const preview = document.createElement('span');
+            preview.innerText = tag.name;
+            preview.style.padding = '4px 8px';
+            preview.style.borderRadius = '4px';
+            preview.style.color = tag.color;
+            preview.style.backgroundColor = tag.bg_color;
+            preview.style.marginRight = '10px';
+            preview.style.fontSize = '12px';
+            
+            const info = document.createElement('span');
+            info.innerText = `Text: ${tag.color} | Bg: ${tag.bg_color}`;
+            info.style.color = '#666';
+            info.style.fontSize = '12px';
+
+            item.appendChild(preview);
+            item.appendChild(info);
+            container.appendChild(item);
+        });
+    }
+
+    function showTagForm(tag) {
+        const form = document.getElementById('tagForm');
+        form.style.display = 'block';
+        document.getElementById('btnDeleteTag').style.display = tag ? 'inline-block' : 'none';
+        
+        if (tag) {
+            document.getElementById('tagId').value = tag.id;
+            document.getElementById('tagName').value = tag.name;
+            document.getElementById('tagColor').value = tag.color;
+            document.getElementById('tagColorText').value = tag.color;
+            document.getElementById('tagBgColor').value = tag.bg_color;
+            document.getElementById('tagBgColorText').value = tag.bg_color;
+        } else {
+            document.getElementById('tagId').value = '';
+            document.getElementById('tagName').value = '';
+            document.getElementById('tagColor').value = '#ffffff';
+            document.getElementById('tagColorText').value = '#ffffff';
+            document.getElementById('tagBgColor').value = '#d4a373';
+            document.getElementById('tagBgColorText').value = '#d4a373';
+        }
+        
+        // Bind color inputs
+        document.getElementById('tagColor').oninput = function() { document.getElementById('tagColorText').value = this.value; }
+        document.getElementById('tagBgColor').oninput = function() { document.getElementById('tagBgColorText').value = this.value; }
+    }
+
+    function hideTagForm() {
+        document.getElementById('tagForm').style.display = 'none';
+    }
+
+    async function saveTag() {
+        const id = document.getElementById('tagId').value;
+        const data = {
+            name: document.getElementById('tagName').value,
+            color: document.getElementById('tagColorText').value,
+            bg_color: document.getElementById('tagBgColorText').value
+        };
+        
+        if (!data.name) { alert('请输入标签名称'); return; }
+        
+        const method = id ? 'PUT' : 'POST';
+        const url = id ? `/api/tags/${id}` : '/api/tags';
+        
+        const res = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        
+        if (result.status === 'success') {
+            hideTagForm();
+            loadData();
+            setTimeout(() => { switchTab('tags'); }, 200);
+        } else {
+            alert('保存失败');
+        }
+    }
+
+    async function deleteTag() {
+        const id = document.getElementById('tagId').value;
+        if (!id || !confirm('确定要删除这个标签吗？')) return;
+        
+        const res = await fetch(`/api/tags/${id}`, { method: 'DELETE' });
+        const result = await res.json();
+        
+        if (result.status === 'success') {
+            hideTagForm();
+            loadData();
+            setTimeout(() => { switchTab('tags'); }, 200);
+        }
+    }
+
+    // --- Region Logic ---
+    function useCurrentCoord(inputId) {
+        const text = document.getElementById('currentCoord').innerText;
+        // Parse "选中坐标: X=100, Y=200"
+        const match = text.match(/X=(\d+), Y=(\d+)/);
+        if (match) {
+            // Region wants "Y, X" string
+            document.getElementById(inputId).value = `${match[2]}, ${match[1]}`;
+        } else {
+            alert("请先点击地图选择位置");
+        }
+    }
+    
+    function loadRegionData() {
+        const id = document.getElementById('regionSelect').value;
+        const region = regionsData.find(r => r.id === id);
+        if (region) {
+            document.getElementById('regionName').value = region.name;
+            document.getElementById('regionCoords').value = `${region.coords[0]}, ${region.coords[1]}`;
+            
+            // Fly to
+            const point = map.unproject([region.coords[0], region.coords[1]], maxZoom);
+            map.flyTo(point, 3);
+        }
+    }
+    
+    async function saveRegion() {
+        const id = document.getElementById('regionSelect').value;
+        if (!id) return alert("请选择区域");
+        
+        const name = document.getElementById('regionName').value;
+        const coordsStr = document.getElementById('regionCoords').value;
+        const coords = coordsStr.split(',').map(n => parseInt(n.trim()));
+        
+        await fetch('/api/regions', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ id, name, coords })
+        });
+        alert("保存成功");
+        loadData(); // reload
+    }
+    
+    let currentFilter = 'all';
+
+    // --- Shop Logic ---
+    
+    function filterShopList(type) {
+        currentFilter = type;
+        document.getElementById('tab-all').classList.toggle('active', type === 'all');
+        document.getElementById('tab-all').style.backgroundColor = type === 'all' ? '#f0f7ff' : 'white';
+        document.getElementById('tab-unlocated').classList.toggle('active', type === 'unlocated');
+        document.getElementById('tab-unlocated').style.backgroundColor = type === 'unlocated' ? '#f0f7ff' : 'white';
+        renderShopList();
+    }
+
+    // --- Export / Import ---
+    
+    function exportShops() {
+        window.location.href = '/api/export/shops';
+    }
+    
+    function triggerImport() {
+        document.getElementById('importFile').click();
+    }
+    
+    async function importShops(input) {
+        if (!input.files || input.files.length === 0) return;
+        
+        const file = input.files[0];
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        if (!confirm('确定要导入该文件吗？这将批量更新或创建商家数据。建议先导出备份。')) {
+            input.value = ''; // Reset
+            return;
+        }
+        
+        try {
+            const res = await fetch('/api/import/shops', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await res.json();
+            
+            if (result.status === 'success') {
+                const stats = result.stats;
+                alert(`导入成功!\n更新: ${stats.updated}\n新增: ${stats.created}\n失败: ${stats.failed}`);
+                if (stats.errors.length > 0) {
+                    console.error('Import errors:', stats.errors);
+                    alert('部分数据导入出错，请查看控制台详情');
+                }
+                refreshShops(); // Reload data
+            } else {
+                alert('导入失败: ' + (result.error || '未知错误'));
+            }
+        } catch (e) {
+            alert('导入请求出错: ' + e.message);
+        } finally {
+            input.value = ''; // Reset
+        }
+    }
+
+    function renderShopList() {
+        const container = document.getElementById('shopListContainer');
+        if (!container) return;
+        container.innerHTML = '';
+        
+        const searchInput = document.getElementById('shopSearchInput');
+        const searchQuery = searchInput ? searchInput.value.toLowerCase().trim() : '';
+        
+        let allShops = [];
+        if (shopsData && typeof shopsData === 'object') {
+            Object.values(shopsData).forEach(list => {
+                if (Array.isArray(list)) {
+                    allShops = allShops.concat(list);
+                }
+            });
+        }
+        
+        // Filter
+        let filtered = allShops.filter(s => {
+            // 1. Tab Filter
+            if (currentFilter === 'unlocated') {
+                if (s.coord_x && s.coord_y) return false;
+            }
+            
+            // 2. Search Filter (Fuzzy Search)
+            if (searchQuery) {
+                const searchStr = `${s.name} ${s.address || ''} ${s.tag || ''} ${s.phone || ''}`.toLowerCase();
+                if (!searchStr.includes(searchQuery)) return false;
+            }
+            
+            return true;
+        });
+        
+        if (filtered.length === 0) {
+            container.innerHTML = '<div style="color:#888; text-align:center; padding:20px;">无匹配商家</div>';
+            return;
+        }
+        
+        filtered.forEach(shop => {
+            const div = document.createElement('div');
+            div.className = 'shop-item';
+            div.onclick = () => showShopForm(shop);
+            
+            // Status badge
+            let badge = '';
+            if (!shop.coord_x || !shop.coord_y) {
+                badge = '<span style="color:red; font-size:10px; border:1px solid red; padding:0 2px; border-radius:2px; margin-left:5px;">未定位</span>';
+            }
+            
+            // 查找标签样式
+            let tagHtml = '';
+            if (shop.tag) {
+                const tags = shop.tag.split(',').map(t => t.trim()).filter(t => t);
+                tags.forEach(tagName => {
+                    const tagConfig = tagsData.find(t => t.name === tagName);
+                    const color = tagConfig ? tagConfig.color : '#666';
+                    const bgColor = tagConfig ? tagConfig.bg_color : '#eee';
+                    tagHtml += `<span style="background: ${bgColor}; color: ${color}; font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-right: 5px; display:inline-block;">${tagName}</span>`;
+                });
+            }
+
+            div.innerHTML = `
+                <!-- <img class="shop-thumb" src="${shop.img}" onerror="this.src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='"> -->
+                <div class="shop-info">
+                    <div class="shop-name">${shop.name} ${badge}</div>
+                    <div class="shop-sub" style="display:flex; align-items:center; flex-wrap:wrap; gap:2px; margin-top:4px; margin-bottom:4px;">
+                        ${tagHtml} 
+                        <span style="color:#888; font-size:12px; margin-left:5px;">${shop.rating}分</span>
+                    </div>
+                    <div class="shop-detail-line">📍 ${shop.address || '暂无地址'}</div>
+                    <div class="shop-detail-line">📞 ${shop.phone || '暂无电话'}</div>
+                </div>
+            `;
+            container.appendChild(div);
+        });
+    }
+    
+    function showShopForm(shop) {
+        document.getElementById('shopListContainer').style.display = 'none';
+        document.getElementById('shopForm').style.display = 'block';
+        document.querySelector('.action-bar').style.display = 'none';
+        
+        if (shop) {
+            // Edit
+            document.getElementById('shopId').value = shop.id;
+            document.getElementById('shopName').value = shop.name;
+            document.getElementById('shopRegion').value = Object.keys(shopsData).find(key => shopsData[key].find(s => s.id === shop.id));
+            document.getElementById('shopTag').value = shop.tag || '';
+            updateShopTagChips(); // Update visual state
+            document.getElementById('shopRating').value = shop.rating;
+            document.getElementById('shopDesc').value = shop.desc;
+            document.getElementById('shopAddress').value = shop.address || '';
+            document.getElementById('shopPhone').value = shop.phone || '';
+            document.getElementById('shopPrice').value = shop.price || '';
+            document.getElementById('shopOpenHours').value = shop.open_hours || '';
+            document.getElementById('shopLat').value = shop.lat || '';
+            document.getElementById('shopLng').value = shop.lng || '';
+            
+            document.getElementById('shopX').value = shop.coord_x || '';
+            document.getElementById('shopY').value = shop.coord_y || '';
+            
+            document.getElementById('shopImgUrl').value = shop.img;
+            document.getElementById('imgPreview').src = getImageUrl(shop.img);
+            document.getElementById('imgPreview').classList.add('show');
+            
+            document.getElementById('btnDeleteShop').style.display = 'block';
+            
+            // Locate on map
+            if (shop.coord_x && shop.coord_y) {
+                const point = map.unproject([shop.coord_y, shop.coord_x], maxZoom);
+                map.flyTo(point, 4);
+            }
+        } else {
+            // New
+            document.getElementById('shopId').value = '';
+            document.getElementById('shopName').value = '';
+            document.getElementById('shopTag').value = '';
+            updateShopTagChips(); // Reset visual state
+            document.getElementById('shopRating').value = '';
+            document.getElementById('shopDesc').value = '';
+            document.getElementById('shopAddress').value = '';
+            document.getElementById('shopPhone').value = '';
+            document.getElementById('shopPrice').value = '';
+            document.getElementById('shopOpenHours').value = '';
+            document.getElementById('shopLat').value = '';
+            document.getElementById('shopLng').value = '';
+            document.getElementById('shopX').value = '';
+            document.getElementById('shopY').value = '';
+            document.getElementById('shopImgUrl').value = '';
+            document.getElementById('imgPreview').classList.remove('show');
+            
+            document.getElementById('btnDeleteShop').style.display = 'none';
+        }
+    }
+    
+    function hideShopForm() {
+        document.getElementById('shopListContainer').style.display = 'block';
+        document.getElementById('shopForm').style.display = 'none';
+        document.querySelector('.action-bar').style.display = 'flex';
+        pickingMode = false;
+        document.getElementById('pickingTip').style.display = 'none';
+    }
+    
+    function startPickCoord() {
+        pickingMode = true;
+        document.getElementById('pickingTip').style.display = 'block';
+    }
+    
+    async function uploadShopImage() {
+        const fileInput = document.getElementById('shopImgUpload');
+        const file = fileInput.files[0];
+        if (!file) return;
+        
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        try {
+            const res = await fetch('/api/upload/image', { method: 'POST', body: formData });
+            const result = await res.json();
+            if (result.url) {
+                document.getElementById('shopImgUrl').value = result.url;
+                document.getElementById('imgPreview').src = getImageUrl(result.url);
+                document.getElementById('imgPreview').classList.add('show');
+            } else {
+                alert('上传失败');
+            }
+        } catch(e) {
+            alert('上传出错');
+        }
+    }
+    
+    async function saveShop() {
+        const id = document.getElementById('shopId').value;
+        const data = {
+            name: document.getElementById('shopName').value,
+            region_id: document.getElementById('shopRegion').value,
+            tag: document.getElementById('shopTag').value,
+            rating: document.getElementById('shopRating').value,
+            desc: document.getElementById('shopDesc').value,
+            address: document.getElementById('shopAddress').value,
+            img: document.getElementById('shopImgUrl').value,
+            coord_x: parseInt(document.getElementById('shopX').value) || 0,
+            coord_y: parseInt(document.getElementById('shopY').value) || 0,
+            phone: document.getElementById('shopPhone').value,
+            price: document.getElementById('shopPrice').value,
+            open_hours: document.getElementById('shopOpenHours').value,
+            lat: parseFloat(document.getElementById('shopLat').value) || null,
+            lng: parseFloat(document.getElementById('shopLng').value) || null,
+            source: 'manual'
+        };
+        
+        if (!data.name || !data.region_id) return alert("名称和区域必填");
+        
+        const url = id ? `/api/shops/${id}` : '/api/shops';
+        const method = id ? 'PUT' : 'POST';
+        
+        await fetch(url, {
+            method: method,
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        
+        alert('保存成功');
+        hideShopForm();
+        loadData();
+    }
+    
+    async function deleteShop() {
+        if (!confirm("确定要删除吗？")) return;
+        const id = document.getElementById('shopId').value;
+        await fetch(`/api/shops/${id}`, { method: 'DELETE' });
+        alert('已删除');
+        hideShopForm();
+        loadData();
+    }
+    
+    function refreshShops() {
+        loadData();
+    }
+
+    async function uploadMap() {
+        const fileInput = document.getElementById('mapUpload');
+        const file = fileInput.files[0];
+        if (!file) return alert("请选择文件");
+
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        document.getElementById('uploadStatus').innerText = "正在上传并处理切片，请耐心等待...";
+        
+        try {
+            const res = await fetch('/api/upload_map', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await res.json();
+            if (result.status === 'success') {
+                alert(`上传成功! 新尺寸: ${result.width}x${result.height}`);
+                location.reload();
+            } else {
+                alert('上传失败: ' + result.error);
+            }
+        } catch (e) {
+            alert('上传出错: ' + e);
+        }
+    }
+
+    init();
+</script>
+
+</body>
+</html>

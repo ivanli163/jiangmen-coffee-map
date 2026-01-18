@@ -1,0 +1,50 @@
+{
+  "libVersion": "3.0.0",
+  "projectname": "jiangmen-map-demo",
+  "condition": {
+    "miniprogram": {
+      "list": [
+        {
+          "name": "pages/coffee_map/coffee_map",
+          "pathName": "pages/coffee_map/coffee_map",
+          "query": "",
+          "scene": null,
+          "launchMode": "default",
+          "partialCompile": {
+            "enabled": true,
+            "pages": []
+          }
+        },
+        {
+          "name": "Version 1.0",
+          "pathName": "pages/index/index",
+          "query": "",
+          "launchMode": "default",
+          "scene": null,
+          "partialCompile": {
+            "enabled": true,
+            "pages": []
+          }
+        }
+      ]
+    }
+  },
+  "setting": {
+    "urlCheck": false,
+    "coverView": true,
+    "lazyloadPlaceholderEnable": false,
+    "skylineRenderEnable": false,
+    "preloadBackgroundData": false,
+    "autoAudits": false,
+    "useApiHook": true,
+    "useApiHostProcess": true,
+    "showShadowRootInWxmlPanel": true,
+    "useStaticServer": false,
+    "useLanDebug": false,
+    "showES6CompileOption": false,
+    "compileHotReLoad": true,
+    "checkInvalidKey": true,
+    "ignoreDevUnusedFiles": true,
+    "bigPackageSizeSupport": false
+  }
+}

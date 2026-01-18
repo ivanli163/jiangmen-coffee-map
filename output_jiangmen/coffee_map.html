@@ -1,0 +1,1327 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>江门咖啡地图 5.0</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body { 
+            margin: 0; 
+            padding: 0; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            overflow: hidden; 
+            /* 提取自海报的“江门薄荷绿”背景 */
+            background: #8CD1C8; 
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        /* --- 沉浸式背景 (The Soil & Mint) --- */
+        #cloud-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            overflow: hidden;
+            /* 保持纯色背景，不需要渐变，呼应海报的扁平感 */
+            background: #8CD1C8;
+        }
+
+        /* 模拟海报中的褐色地块/云朵 (Coffee Soil Shapes) */
+        .soil-shape {
+            position: absolute;
+            background: #C1956E; /* 提取自海报的“咖啡土”色 */
+            border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%; /* 不规则有机形状 */
+            opacity: 0.9;
+            filter: blur(0px); /* 海报是清晰边缘，不做模糊 */
+            animation: floatSoil 20s ease-in-out infinite;
+            z-index: 1;
+        }
+
+        /* 左上大块 */
+        .soil-shape:nth-child(2) { 
+            width: 60vw; 
+            height: 60vw; 
+            top: -20%; 
+            left: -10%; 
+            transform: rotate(-10deg);
+        }
+        
+        /* 右下大块 */
+        .soil-shape:nth-child(3) { 
+            width: 70vw; 
+            height: 70vw; 
+            bottom: -30%; 
+            right: -20%; 
+            background: #B08B63; /* 稍深一点的褐色 */
+            animation-duration: 25s;
+            animation-direction: reverse;
+        }
+
+        @keyframes floatSoil {
+            0% { transform: translate(0, 0) rotate(0deg); }
+            50% { transform: translate(20px, 30px) rotate(2deg); }
+            100% { transform: translate(0, 0) rotate(0deg); }
+        }
+
+        /* --- 动态背景文字纹理 (Dynamic Text Pattern) --- */
+        #bg-pattern {
+            position: absolute;
+            top: -100%;
+            left: -100%;
+            width: 300%;
+            height: 300%;
+            display: flex;
+            flex-direction: column; 
+            justify-content: center;
+            align-items: center;
+            transform: rotate(-30deg);
+            opacity: 0.15; 
+            pointer-events: none;
+            z-index: 2; 
+            overflow: hidden;
+        }
+
+        .pattern-row {
+            display: flex;
+            justify-content: center;
+            /* 允许内容自然撑开，方便实现无缝滚动 */
+            width: max-content; 
+            margin: 10px 0; 
+            will-change: transform; /* 优化动画性能 */
+        }
+
+        .pattern-item {
+            font-size: 20px; /* 字体缩小 50% (原40px) */
+            font-weight: 900;
+            color: #000; 
+            white-space: nowrap;
+            margin: 0 20px; /* 间距也相应微调 */
+            user-select: none;
+        }
+
+        /* 左右移动动画 */
+        .move-left {
+            /* 极慢速：6000s (约 1px/s)，营造几乎静止但又在流动的氛围 */
+            animation: slideLeft 6000s linear infinite;
+        }
+
+        .move-right {
+            /* 极慢速：6000s (约 1px/s) */
+            animation: slideRight 6000s linear infinite;
+        }
+
+        @keyframes slideLeft {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+
+        @keyframes slideRight {
+            0% { transform: translateX(-50%); }
+            100% { transform: translateX(0); }
+        }
+
+        /* 巨型背景文字 (已废弃，由 bg-pattern 替代) */
+        /* .giant-text { ... } */
+
+        /* --- 悬浮地图 (The Floating Island) --- */
+        /* 修复瓦片间的细缝/间隙 (Anti-aliasing fix) */
+        .leaflet-tile {
+            /* 核心修复：添加透明外轮廓，强制浏览器填充间隙 */
+            outline: 1px solid transparent;
+            /* 优化 WebKit 浏览器的对比度和边缘渲染 */
+            image-rendering: -webkit-optimize-contrast;
+            /* 开启硬件加速，减少缩放时的抖动 */
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
+            /* 防止拖动时的撕裂 */
+            will-change: transform;
+        }
+
+        /* 确保地图容器背景与瓦片融合，掩盖可能的缝隙 */
+        /* 使用 !important 强制覆盖 Leaflet 默认样式 */
+        .leaflet-container {
+            background: #eaddcf !important; 
+        }
+
+        #map {
+            flex: 1; /* Fill remaining space */
+            width: 100%;
+            height: 100%; /* Explicit height */
+            z-index: 10; /* Ensure map is above background */
+            position: relative;
+            background: #eaddcf !important; /* 与 leaflet-container 保持一致 */
+            touch-action: none;
+            -ms-touch-action: none;
+        }
+        
+        /* 交互反馈 - 简化 */
+        #map.interacting {
+            /* transform: scale(0.98); */
+            cursor: grabbing;
+        }
+
+        /* --- 顶部导航栏 --- */
+        #top-bar {
+            height: 240px;
+            width: 100%;
+            position: relative; /* In flow */
+            z-index: 1000;
+            padding: 20px 0 10px 20px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            background: rgba(255, 255, 255, 0.2); /* 更通透 */
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            /* 顶部栏也悬浮 */
+            margin-bottom: 0;
+        }
+        
+        /* --- 玻璃拟态 UI 系统 (Glassmorphism) --- */
+        :root {
+            --glass-bg: rgba(20, 20, 20, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --glass-blur: 20px;
+            --accent-color: #d4a373; /* 咖啡色 */
+            --text-color: #ffffff;
+            --text-secondary: #aaaaaa;
+        }
+
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(var(--glass-blur));
+            -webkit-backdrop-filter: blur(var(--glass-blur));
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            color: var(--text-color);
+        }
+
+        /* --- 1. 区域标记 (Region Marker) --- */
+        .region-label {
+            background: transparent;
+            border: none;
+            color: white;
+            font-weight: bold;
+            font-size: 16px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+            text-align: center;
+        }
+        .region-dot {
+            width: 14px;
+            height: 14px;
+            background: #00ffff; /* High contrast Cyan */
+            border-radius: 50%;
+            margin: 0 auto 5px auto;
+            /* box-shadow handled in animation */
+            animation: pulse 2.5s infinite;
+            position: relative;
+        }
+        
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(0, 255, 255, 0.7); }
+            70% { box-shadow: 0 0 0 25px rgba(0, 255, 255, 0); } /* Larger range, fades to transparent */
+            100% { box-shadow: 0 0 0 0 rgba(0, 255, 255, 0); }
+        }
+
+        /* --- 2. 底部滑块 (Bottom Slider - IMG_0718 Style) --- */
+        #bottom-slider {
+            position: absolute;
+            bottom: -300px; /* Hidden by default */
+            left: 0;
+            right: 0;
+            height: 220px;
+            z-index: 1000;
+            padding: 20px 0 30px 20px; /* Extra padding bottom for safe area */
+            transition: bottom 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #bottom-slider.active {
+            bottom: 0;
+        }
+
+        .slider-header {
+            padding-right: 20px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .region-title {
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .close-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            color: white;
+            line-height: 24px;
+            text-align: center;
+            font-size: 14px;
+            cursor: pointer;
+            z-index: 1000; /* Ensure clickable */
+            pointer-events: auto;
+        }
+
+        .cards-container {
+            display: flex;
+            overflow-x: auto;
+            scroll-behavior: smooth;
+            padding-right: 20px;
+            -webkit-overflow-scrolling: touch;
+            /* Hide scrollbar */
+            scrollbar-width: none; 
+        }
+        .cards-container::-webkit-scrollbar { display: none; }
+
+        .shop-card {
+            flex: 0 0 200px; /* 加宽卡片以容纳更多信息 */
+            height: auto;
+            margin-right: 15px;
+            background: rgba(30, 30, 30, 0.6); /* 深色半透明背景 */
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        
+        .shop-card:active {
+            transform: scale(0.98);
+        }
+
+        .card-img {
+            width: 100%;
+            height: 112px; /* 16:9 Ratio (200px * 9/16 = 112.5px) */
+            background-color: #333;
+            background-size: cover;
+            background-position: center;
+            position: relative;
+        }
+        
+        .card-badge {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(0,0,0,0.6);
+            color: #ffb400;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+        }
+
+        .card-info {
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+
+        .shop-name {
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            line-height: 1.3;
+            color: #fff;
+            /* 限制显示2行 */
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .shop-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+
+        .shop-tag {
+            font-size: 10px;
+            color: #d4a373;
+            background: rgba(212, 163, 115, 0.1);
+            padding: 2px 5px;
+            border-radius: 3px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100px;
+        }
+        
+        .shop-address {
+            font-size: 11px;
+            color: #999;
+            /* 限制显示1行 */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: flex;
+            align-items: center;
+        }
+        
+        .shop-address::before {
+            content: '📍';
+            margin-right: 3px;
+            font-size: 10px;
+        }
+        
+        /* 参展商标识 */
+        .exhibitor-badge {
+            position: absolute;
+            bottom: 6px;
+            right: 6px;
+            width: 50px;
+            height: 50px;
+            background-size: contain;
+            background-repeat: no-repeat;
+            z-index: 10;
+            opacity: 0.9;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+            pointer-events: none; /* 防止遮挡点击 */
+        }
+
+        /* --- 3. 沉浸详情页 (Details Modal - IMG_0719 Style) --- */
+        #details-modal {
+            position: fixed;
+            top: 100vh;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2000;
+            background: #000;
+            transition: top 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            overflow-y: auto;
+        }
+
+        #details-modal.active {
+            top: 0;
+        }
+
+        .hero-image {
+            width: 100%;
+            height: 35vh;
+            background-color: #333;
+            background-size: cover;
+            background-position: center;
+            position: relative;
+        }
+
+        .back-btn {
+            position: absolute;
+            top: 40px;
+            left: 20px;
+            width: 36px;
+            height: 36px;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(10px);
+            border-radius: 50%;
+            color: white;
+            text-align: center;
+            line-height: 36px;
+            font-size: 18px;
+            cursor: pointer;
+            z-index: 10;
+        }
+
+        .details-content {
+            padding: 90px 24px 30px 24px;
+            background: #121212;
+            min-height: 100vh;
+            /* border-radius: 24px 24px 0 0; */
+            margin-top: 0; 
+            position: relative;
+        }
+
+        .details-title {
+            font-size: 26px;
+            font-weight: 800;
+            margin-bottom: 12px;
+            color: white;
+            line-height: 1.3;
+        }
+
+        .details-meta {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .meta-tag {
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            background: #222;
+            color: #888;
+        }
+
+        .details-desc {
+            font-size: 15px;
+            line-height: 1.6;
+            color: #ddd;
+            margin-bottom: 30px;
+        }
+
+        .action-btn {
+            display: block;
+            width: 100%;
+            padding: 16px;
+            background: var(--accent-color);
+            color: #000;
+            font-weight: 700;
+            text-align: center;
+            border-radius: 12px;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+    </style>
+</head>
+<body>
+    <!-- 沉浸式云海背景 -->
+    <div id="cloud-bg">
+        <!-- 模拟海报的褐色有机形状 -->
+        <div class="soil-shape"></div>
+        <div class="soil-shape"></div>
+
+        <!-- 动态生成的文字纹理 -->
+        <div id="bg-pattern">
+            <!-- JS 将填充 .pattern-item -->
+        </div>
+    </div>
+
+    <!-- 顶部导航栏 (Top Nav Bar) -->
+    
+    <div id="map"></div>
+
+    <!-- 底部滑块 (Bottom Slider) -->
+    <div id="bottom-slider" class="glass-panel">
+        <div class="slider-header">
+            <span class="region-title" id="slider-region-name">区域名称</span>
+            <div class="close-btn" onclick="hideBottomSlider()">✕</div>
+        </div>
+        <div class="cards-container" id="cards-container">
+            <!-- JS will inject cards here -->
+        </div>
+    </div>
+
+    <!-- 全屏详情页 (Full Screen Details) -->
+    <div id="details-modal">
+        <div class="back-btn" onclick="hideDetails()">←</div>
+        <!-- Hero image removed -->
+        <div class="details-content">
+            <h1 class="details-title" id="detail-title">商家名称</h1>
+            <div class="details-meta">
+                <span class="meta-tag" id="detail-tag1">标签</span>
+                <span class="meta-tag" id="detail-tag2">评分</span>
+            </div>
+            
+            <div id="detail-extra" style="margin-bottom: 25px; color: #aaa; font-size: 14px; line-height: 1.8;">
+                <!-- JS injected details -->
+            </div>
+
+            <!-- 腾讯地图容器 (替代原评论数显示) -->
+            <div id="detail-map-container" style="border-top: 1px solid #333; padding-top: 20px; margin-bottom: 30px;">
+                <!-- 地图展示已移除，只保留导航按钮 -->
+                <!-- <div style="margin-bottom: 10px; color: #ddd; font-weight: bold;">📍 店铺位置</div> -->
+                <!-- <div id="tencent-map" style="width: 100%; height: 200px; border-radius: 12px; overflow: hidden; background: #222;"></div> -->
+                <button class="action-btn" id="nav-btn" style="margin-top: 0;">🚀 导航前往</button>
+            </div>
+            <!-- <p class="details-desc" id="detail-desc" style="border-top: 1px solid #333; padding-top: 20px;"> -->
+                <!-- Description -->
+            <!-- </p> -->
+            <!-- <button class="action-btn" onclick="alert('调起微信导航')">📍 导航前往</button> -->
+        </div>
+    </div>
+
+    <script>
+        // --- 1. Global Variables ---
+        let map;
+        let bounds;
+        let maxZoom;
+        let initialZoom; // 用于存储初始缩放级别 (minZoom)，以便复位时使用
+        let DB = {}; 
+        let API_BASE;
+        const apiParam = new URLSearchParams(window.location.search).get('api');
+        if (apiParam && /^https?:\/\//.test(apiParam)) {
+            API_BASE = apiParam.replace(/\/+$/,'');
+        } else if (window.location.protocol === 'file:') {
+            API_BASE = 'http://127.0.0.1:8000';
+        } else {
+            API_BASE = window.location.origin;
+        }
+        window.API_BASE = API_BASE;
+
+        window.addEventListener('wheel', (e) => {
+            if (e.ctrlKey) e.preventDefault();
+        }, { passive: false });
+
+        ['gesturestart', 'gesturechange', 'gestureend'].forEach((type) => {
+            document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+        });
+
+        function getImageUrl(url) {
+            if (!url) return '';
+            if (url.startsWith('http')) return url;
+            
+            // 检查是否有 image_host 参数 (或复用 tile_host)
+            const urlParams = new URLSearchParams(window.location.search);
+            const imgHost = urlParams.get('img_host') || urlParams.get('tile_host');
+            
+            if (imgHost) {
+                // 如果是相对路径 (例如 server/uploads/shops/xxx.jpg)
+                // 或者是文件名 (xxx.jpg)
+                // 我们需要适配云存储的路径结构
+                
+                // 假设云存储结构为:
+                // output_jiangmen/ -> 瓦片
+                // server/uploads/shops/ -> 图片
+                
+                // 如果 url 包含 'server/uploads'，直接拼接
+                if (url.includes('server/uploads')) {
+                    // 去掉开头的 /
+                    const cleanUrl = url.startsWith('/') ? url.slice(1) : url;
+                    return `${imgHost}/${cleanUrl}`;
+                }
+            }
+
+            // 补全相对路径 (本地开发或全量部署模式)
+            if (url.startsWith('/')) {
+                return API_BASE + url;
+            }
+            return API_BASE + '/' + url;
+        }
+
+        // --- 1.5 IndexedDB Tile Cache ---
+        const TileCache = {
+            dbName: 'LeafletTileCache',
+            storeName: 'tiles',
+            db: null,
+            
+            async open() {
+                if (this.db) return this.db;
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(this.dbName, 1);
+                    request.onerror = e => reject(e);
+                    request.onupgradeneeded = e => {
+                        e.target.result.createObjectStore(this.storeName);
+                    };
+                    request.onsuccess = e => {
+                        this.db = e.target.result;
+                        resolve(this.db);
+                    };
+                });
+            },
+            
+            async get(url) {
+                try {
+                    const db = await this.open();
+                    return new Promise((resolve, reject) => {
+                        const tx = db.transaction(this.storeName, 'readonly');
+                        const store = tx.objectStore(this.storeName);
+                        const req = store.get(url);
+                        req.onsuccess = () => resolve(req.result);
+                        req.onerror = () => reject(req.error);
+                    });
+                } catch (e) {
+                    console.error("Cache get error:", e);
+                    return null;
+                }
+            },
+            
+            async put(url, blob) {
+                try {
+                    const db = await this.open();
+                    return new Promise((resolve, reject) => {
+                        const tx = db.transaction(this.storeName, 'readwrite');
+                        const store = tx.objectStore(this.storeName);
+                        const req = store.put(blob, url);
+                        req.onsuccess = () => resolve();
+                        req.onerror = () => reject(req.error);
+                    });
+                } catch (e) {
+                    console.error("Cache put error:", e);
+                }
+            }
+        };
+
+        // Custom Cached Tile Layer
+        L.TileLayer.Cached = L.TileLayer.extend({
+            createTile: function(coords, done) {
+                const tile = document.createElement('img');
+                
+                L.DomEvent.on(tile, 'load', L.Util.bind(this._tileOnLoad, this, done, tile));
+                L.DomEvent.on(tile, 'error', L.Util.bind(this._tileOnError, this, done, tile));
+                
+                if (this.options.crossOrigin || this.options.crossOrigin === '') {
+                    tile.crossOrigin = this.options.crossOrigin === true ? '' : this.options.crossOrigin;
+                }
+                
+                tile.alt = '';
+                tile.setAttribute('role', 'presentation');
+                
+                const url = this.getTileUrl(coords);
+                
+                // Async Cache Logic
+                TileCache.get(url).then(blob => {
+                    if (blob) {
+                        // Cache Hit
+                        const objUrl = URL.createObjectURL(blob);
+                        tile.src = objUrl;
+                        // Clean up object URL after load to prevent memory leaks
+                        L.DomEvent.on(tile, 'load', () => URL.revokeObjectURL(objUrl));
+                    } else {
+                        // Cache Miss - Fetch and Store
+                        fetch(url)
+                            .then(res => {
+                                if (!res.ok) throw new Error(res.statusText);
+                                return res.blob();
+                            })
+                            .then(blob => {
+                                TileCache.put(url, blob);
+                                const objUrl = URL.createObjectURL(blob);
+                                tile.src = objUrl;
+                                L.DomEvent.on(tile, 'load', () => URL.revokeObjectURL(objUrl));
+                            })
+                            .catch(e => {
+                                // Fallback to normal load on fetch error
+                                tile.src = url;
+                            });
+                    }
+                }).catch(e => {
+                    // Fallback on DB error
+                    tile.src = url;
+                });
+
+                return tile;
+            }
+        });
+
+        // --- 2. Initialization ---
+        async function init() {
+            try {
+                console.log("Starting initialization...");
+                // Fetch Config
+                console.log("Fetching config from:", `${API_BASE}/api/config`);
+                const configRes = await fetch(`${API_BASE}/api/config`);
+                console.log("Config fetch response status:", configRes.status);
+                const config = await configRes.json();
+                console.log("Config loaded:", config);
+                
+                const imgWidth = parseInt(config.imgWidth);
+                const imgHeight = parseInt(config.imgHeight);
+                maxZoom = parseInt(config.maxZoom);
+                console.log("Map dimensions set:", imgWidth, imgHeight, maxZoom);
+
+                if (isNaN(imgWidth) || isNaN(imgHeight)) {
+                     console.error("Image dimensions are NaN! Check config.");
+                     throw new Error("Invalid image dimensions in config");
+                }
+
+                if (isNaN(maxZoom)) {
+                    console.error("maxZoom is NaN! Check config.");
+                    maxZoom = 5; // Fallback
+                }
+
+                // Fetch Data
+                console.log("Fetching data from:", `${API_BASE}/api/data`);
+                const dataRes = await fetch(`${API_BASE}/api/data`);
+                console.log("Data fetch response status:", dataRes.status);
+                DB = await dataRes.json();
+                console.log("Data loaded:", DB);
+
+                console.log("Initializing map...");
+                initMap(imgWidth, imgHeight);
+                console.log("Initializing background pattern...");
+                initBgPattern(); // 初始化背景文字纹理
+                console.log("Rendering regions...");
+                renderRegions();
+                console.log("Initialization complete.");
+            } catch (e) {
+                console.error("Failed to load map data:", e);
+                // 在页面上显示错误，方便真机调试
+                const errDiv = document.createElement('div');
+                errDiv.style.position = 'fixed';
+                errDiv.style.top = '0';
+                errDiv.style.left = '0';
+                errDiv.style.background = 'rgba(255,0,0,0.8)';
+                errDiv.style.color = 'white';
+                errDiv.style.padding = '10px';
+                errDiv.style.zIndex = '9999';
+                errDiv.innerText = "数据加载失败: " + e.message;
+                document.body.appendChild(errDiv);
+            }
+        }
+
+        function initBgPattern() {
+            const container = document.getElementById('bg-pattern');
+            // 生成足够多的行以覆盖高度
+            const rowCount = 60; 
+            // 增加每行生成的文字数量，确保足够长以支持无缝滚动 (-50% 位移)
+            const itemsPerRow = 60;
+            
+            let html = '';
+            for (let r = 0; r < rowCount; r++) {
+                // 偶数行：英文，向左移动；奇数行：中文，向右移动
+                const isEnglish = (r % 2 === 0);
+                const text = isEnglish ? 'COFFEE MAP @JIANGMEN' : '另一片土壤';
+                const moveClass = isEnglish ? 'move-left' : 'move-right';
+                
+                // 随机错开起始位置 (Staggering)
+                // 通过设置负的 animation-delay 来“快进”动画，实现视觉上的错位
+                // 调整 delay 范围以匹配新的时长 (0 to -6000s)
+                const randomDelay = Math.random() * -6000; 
+                
+                let rowHtml = `<div class="pattern-row ${moveClass}" style="animation-delay: ${randomDelay}s;">`;
+                for (let i = 0; i < itemsPerRow; i++) {
+                    rowHtml += `<div class="pattern-item">${text}</div>`;
+                }
+                rowHtml += '</div>';
+                html += rowHtml;
+            }
+            container.innerHTML = html;
+        }
+
+        function initMap(imgWidth, imgHeight) {
+            try {
+                console.log("initMap called with:", imgWidth, imgHeight, maxZoom);
+                const extraZoom = 0;
+                const mapMaxZoom = maxZoom + extraZoom;
+                console.log("Calculated mapMaxZoom:", mapMaxZoom);
+
+                // 1. 计算适配屏幕高度所需的最小缩放值 (Cover Mode)
+                // 目标：地图在最小缩放时，高度必须 >= 屏幕高度
+                // 公式推导：
+                // MapHeightAtZoom(z) = OriginalHeight * (2^z / 2^maxZoom)
+                // We need: MapHeightAtZoom(z) >= ScreenHeight
+                // => 2^z >= (ScreenHeight * 2^maxZoom) / OriginalHeight
+                const screenHeight = window.innerHeight;
+                const screenWidth = window.innerWidth;
+                
+                // 计算填满高度所需的缩放值
+                const zoomToCoverHeight = Math.log2((screenHeight * Math.pow(2, maxZoom)) / imgHeight);
+                // 计算填满宽度所需的缩放值 (通常用于横屏，但在竖屏手机上通常高度是短板)
+                const zoomToCoverWidth = Math.log2((screenWidth * Math.pow(2, maxZoom)) / imgWidth);
+                
+                // 调整最小缩放限制逻辑 (Contain Mode with Elastic Bounce)
+                // 用户反馈“穿帮”，意味着必须使用 Cover Mode 来避免看到底图
+                // 强制使用 Cover Mode (Math.max) 确保任何时候地图都至少填满一个维度，且另一维度溢出
+                // 这样用户永远不会看到黑边
+                // let minZoom = Math.min(zoomToCoverHeight, zoomToCoverWidth);
+                
+                // 改为 Math.max，强制 Cover Mode
+                let minZoom = Math.max(zoomToCoverHeight, zoomToCoverWidth);
+                console.log("Calculated minZoom (Cover Mode):", minZoom);
+                
+                // 存储到全局变量，供 reset 使用
+                initialZoom = minZoom;
+
+                console.log("Creating L.map instance...");
+                map = L.map('map', {
+                    minZoom: minZoom, // 动态设置最小缩放
+                    maxZoom: mapMaxZoom, // 允许放大到更深层级
+                    crs: L.CRS.Simple,
+                    maxBoundsViscosity: 1.0, // 增加阻尼到 1.0，完全禁止拖出边界，防止露出底图
+                    bounceAtZoomLimits: false,
+                    zoomControl: false,
+                    attributionControl: false,
+                    zoomSnap: 1,
+                    zoomDelta: 1,
+                    inertia: false, 
+                    inertiaDeceleration: 3000,
+                    inertiaMaxSpeed: 1500,
+                    fadeAnimation: false,
+                    zoomAnimation: false,
+                    markerZoomAnimation: false
+                });
+                console.log("Map instance created.");
+
+                // 计算 Bounds
+                // 1. 原始 Bounds (基于图片尺寸)
+                const southWest = map.unproject([0, imgHeight], maxZoom);
+                const northEast = map.unproject([imgWidth, 0], maxZoom);
+                bounds = new L.LatLngBounds(southWest, northEast);
+
+                // 2. 收缩 Bounds (Inset Bounds)
+                // 防止用户拖动到最边缘的像素 (可能存在半透明或渲染误差)
+                // 向内收缩 100 像素 (在 maxZoom 层级下)，增加安全边距
+                const insetPixels = 100;
+                const swInset = map.unproject([insetPixels, imgHeight - insetPixels], maxZoom);
+                const neInset = map.unproject([imgWidth - insetPixels, insetPixels], maxZoom);
+                const tightBounds = new L.LatLngBounds(swInset, neInset);
+
+                // 瓦片路径改为相对于当前 HTML 的路径，因为 HTML 是由 Flask 服务的
+                // 修复：强制 minZoom 为 0 以确保瓦片始终被加载，即使地图被缩放到很大
+                // Cover Mode 只应该控制视图（setView）和拖动限制（setMinZoom on map），而不应该限制 TileLayer 加载瓦片
+                console.log("Adding TileLayer...");
+                // 确保 tileUrl 指向正确的路径
+        let tileUrl;
+        // 优先使用 URL 参数中指定的瓦片地址 (例如 Cloud Storage)
+        const tileHostParam = new URLSearchParams(window.location.search).get('tile_host');
+        if (tileHostParam) {
+             tileUrl = `${tileHostParam}/output_jiangmen/{z}/{x}/{y}.png`;
+        } else {
+             tileUrl = `${API_BASE}/output_jiangmen/{z}/{x}/{y}.png`;
+        }
+        console.log("Using tile URL:", tileUrl);
+                
+                // 降级方案：暂时使用标准 L.tileLayer 排除缓存逻辑问题
+                console.log("Using standard L.tileLayer for debugging...");
+                L.tileLayer(tileUrl, {
+                    minZoom: 0, 
+                    maxZoom: mapMaxZoom,
+                    maxNativeZoom: maxZoom,
+                    tileSize: 256,
+                    tms: false,
+                    noWrap: true,
+                    bounds: bounds, // TileLayer 仍然加载全部
+                    keepBuffer: 16, // 增加 buffer 防止快速拖动时出现空白
+                    updateWhenIdle: false,
+                    updateWhenZooming: false,
+                    // 消除瓦片间隙的关键属性
+                    detectRetina: true
+                }).addTo(map);
+                console.log("TileLayer added.");
+
+                // 设置最大边界：只允许拖动到地图边缘，不允许拖出空白
+                // 使用收缩后的 tightBounds 来限制拖动
+                map.setMaxBounds(tightBounds);
+
+                const mapContainer = map.getContainer();
+                let pinchStartDistance = null;
+                let touchZoomWasEnabled = null;
+                const getTouchDistance = (t0, t1) => Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
+
+                mapContainer.addEventListener('touchstart', (e) => {
+                    if (!e.touches || e.touches.length !== 2) return;
+                    pinchStartDistance = getTouchDistance(e.touches[0], e.touches[1]);
+                    touchZoomWasEnabled = (map.touchZoom && map.touchZoom.enabled && map.touchZoom.enabled()) ? true : false;
+                }, { passive: false, capture: true });
+
+                mapContainer.addEventListener('touchmove', (e) => {
+                    if (pinchStartDistance === null) return;
+                    if (!e.touches || e.touches.length !== 2) return;
+                    const currentDistance = getTouchDistance(e.touches[0], e.touches[1]);
+                    if (map.getZoom() >= map.getMaxZoom() && currentDistance > pinchStartDistance + 2) {
+                        if (map.touchZoom && map.touchZoom.disable) map.touchZoom.disable();
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        map.stop();
+                        map.setZoom(map.getMaxZoom(), { animate: false });
+                        map.panInsideBounds(tightBounds, { animate: false });
+                        return;
+                    }
+                    if (touchZoomWasEnabled && map.touchZoom && map.touchZoom.enable) map.touchZoom.enable();
+                }, { passive: false, capture: true });
+
+                const clearPinchState = (e) => {
+                    if (!e.touches || e.touches.length < 2) {
+                        pinchStartDistance = null;
+                        if (touchZoomWasEnabled && map.touchZoom && map.touchZoom.enable) map.touchZoom.enable();
+                        touchZoomWasEnabled = null;
+                    }
+                };
+                mapContainer.addEventListener('touchend', clearPinchState, { passive: false, capture: true });
+                mapContainer.addEventListener('touchcancel', clearPinchState, { passive: false, capture: true });
+
+                const activePointers = new Map();
+                let pointerStartDistance = null;
+                let pointerTouchZoomWasEnabled = null;
+                const getPointerDistance = () => {
+                    const pts = Array.from(activePointers.values());
+                    if (pts.length !== 2) return null;
+                    return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+                };
+
+                mapContainer.addEventListener('pointerdown', (e) => {
+                    if (e.pointerType !== 'touch') return;
+                    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                    if (activePointers.size === 2) {
+                        pointerStartDistance = getPointerDistance();
+                        pointerTouchZoomWasEnabled = (map.touchZoom && map.touchZoom.enabled && map.touchZoom.enabled()) ? true : false;
+                    }
+                }, { passive: false, capture: true });
+
+                mapContainer.addEventListener('pointermove', (e) => {
+                    if (e.pointerType !== 'touch') return;
+                    if (!activePointers.has(e.pointerId)) return;
+                    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                    if (activePointers.size !== 2 || pointerStartDistance === null) return;
+                    const currentDistance = getPointerDistance();
+                    if (currentDistance === null) return;
+                    if (map.getZoom() >= map.getMaxZoom() && currentDistance > pointerStartDistance + 2) {
+                        if (map.touchZoom && map.touchZoom.disable) map.touchZoom.disable();
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        map.stop();
+                        map.setZoom(map.getMaxZoom(), { animate: false });
+                        map.panInsideBounds(tightBounds, { animate: false });
+                        return;
+                    }
+                    if (pointerTouchZoomWasEnabled && map.touchZoom && map.touchZoom.enable) map.touchZoom.enable();
+                }, { passive: false, capture: true });
+
+                const clearPointerPinch = (e) => {
+                    if (e.pointerType === 'touch') activePointers.delete(e.pointerId);
+                    if (activePointers.size < 2) {
+                        pointerStartDistance = null;
+                        if (pointerTouchZoomWasEnabled && map.touchZoom && map.touchZoom.enable) map.touchZoom.enable();
+                        pointerTouchZoomWasEnabled = null;
+                    }
+                };
+                mapContainer.addEventListener('pointerup', clearPointerPinch, { passive: false, capture: true });
+                mapContainer.addEventListener('pointercancel', clearPointerPinch, { passive: false, capture: true });
+
+                mapContainer.addEventListener('gesturestart', (e) => {
+                    if (map.getZoom() >= map.getMaxZoom()) {
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        map.stop();
+                        map.setZoom(map.getMaxZoom(), { animate: false });
+                        map.panInsideBounds(tightBounds, { animate: false });
+                    }
+                }, { passive: false, capture: true });
+
+                mapContainer.addEventListener('gesturechange', (e) => {
+                    if (map.getZoom() >= map.getMaxZoom()) {
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        map.stop();
+                        map.setZoom(map.getMaxZoom(), { animate: false });
+                        map.panInsideBounds(tightBounds, { animate: false });
+                    }
+                }, { passive: false, capture: true });
+
+                mapContainer.addEventListener('gestureend', (e) => {
+                    if (map.getZoom() >= map.getMaxZoom()) {
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        map.stop();
+                        map.setZoom(map.getMaxZoom(), { animate: false });
+                        map.panInsideBounds(tightBounds, { animate: false });
+                    }
+                }, { passive: false, capture: true });
+
+                let clampRaf = null;
+                const scheduleClamp = () => {
+                    if (clampRaf) return;
+                    clampRaf = requestAnimationFrame(() => {
+                        clampRaf = null;
+                        map.panInsideBounds(tightBounds, { animate: false });
+                    });
+                };
+                map.on('zoom', scheduleClamp);
+                map.on('move', scheduleClamp);
+
+
+                
+                // 初始视图：居中，并使用计算出的最小缩放值
+                map.setView(bounds.getCenter(), minZoom);
+                console.log("Map view set.");
+
+                // 交互反馈
+                map.on('movestart', () => {
+                    document.getElementById('map').classList.add('interacting');
+                });
+                
+                // 使用 'move' 事件而不是 'moveend' 以实现流畅的实时视差
+                map.on('move', () => {
+                    // 视差效果：根据地图中心点偏移移动巨型文字
+                    // 修正：使用 bounds.getCenter() (地图内容的绝对中心) 而不是 map.getCenter() (当前视口的中心)
+                    // map.getCenter() 在容器中永远是中心，导致之前计算的 dx/dy 永远为 0
+                    const worldCenter = bounds.getCenter();
+                    const container = map.getContainer();
+                    
+                    // 获取“世界中心”在当前屏幕上的像素位置
+                    // 当我们拖动地图时，这个点的位置会改变
+                    const worldCenterPoint = map.latLngToContainerPoint(worldCenter);
+                    
+                    const w = container.offsetWidth;
+                    const h = container.offsetHeight;
+                    
+                    // 计算偏移量：世界中心相对于屏幕中心的距离
+                    // 比如：地图向右拖动 -> 世界中心向右移动 -> deltaX > 0
+                    const deltaX = worldCenterPoint.x - w / 2;
+                    const deltaY = worldCenterPoint.y - h / 2;
+                    
+                    const bgPattern = document.getElementById('bg-pattern');
+                    if (bgPattern) {
+                        // 1. 修正视差方向 (Corrected Parallax Direction)
+                        // 背景应该跟随地图移动，但速度较慢 (0 < factor < 1)
+                        // 降低视差幅度，避免眩晕 (0.15 -> 0.05)
+                        const moveX = deltaX * 0.05; 
+                        const moveY = deltaY * 0.05;
+                        
+                        // 2. 仅保留平移 (Translation Only)
+                        // 注意：bgPattern 已经有 rotate(-30deg)，我们需要保留它
+                        bgPattern.style.transform = `rotate(-30deg) translate(${moveX}px, ${moveY}px)`;
+                    }
+                });
+
+                map.on('moveend', () => {
+                    document.getElementById('map').classList.remove('interacting');
+                });
+                console.log("initMap finished.");
+            } catch (e) {
+                console.error("Error in initMap:", e);
+                throw e; // Re-throw to be caught by init()
+            }
+        }
+
+        function renderRegions() {
+            DB.regions.forEach(region => {
+                // DB stores [y, x] in coords
+                const point = map.unproject([region.coords[1], region.coords[0]], maxZoom);
+                
+                const icon = L.divIcon({
+                    className: 'region-marker',
+                    html: `<div class="region-dot"></div><div class="region-label">${region.name}</div>`,
+                    iconSize: [100, 40],
+                    iconAnchor: [50, 20]
+                });
+
+                const marker = L.marker(point, {icon: icon}).addTo(map);
+                
+                marker.on('click', () => {
+                    focusRegion(region);
+                });
+            });
+        }
+
+        // --- 3. Interactions Logic ---
+
+        // 统一的飞行逻辑，防止露出底图
+        function safeFlyTo(targetCenter, targetZoom) {
+            if (!map) return;
+            
+            // 使用 easeLinearity: 1 (线性插值) 来禁用 flyTo 的“先缩放再平移”的抛物线效果
+            // 这样可以确保在飞行过程中，缩放级别不会低于起点或终点中较小的一个
+            // 从而防止在从 zoom 4 飞回 minZoom 时，因为抛物线轨迹而导致缩放级别低于 minZoom，露出底图
+            map.flyTo(targetCenter, targetZoom, {
+                duration: 1.5,
+                easeLinearity: 1, // 关键：线性动画，避免缩放“下沉”
+                noMoveStart: true
+            });
+        }
+
+        function focusRegion(region) {
+            // 1. Fly to region (Use safeFlyTo)
+            const point = map.unproject([region.coords[1], region.coords[0]], maxZoom);
+            safeFlyTo(point, 4);
+
+            // 2. Load data
+            const shops = DB.shops[region.id];
+            renderSlider(region.name, shops);
+
+            // 3. Show slider
+            document.getElementById('bottom-slider').classList.add('active');
+        }
+
+        function renderSlider(regionName, shops) {
+            document.getElementById('slider-region-name').innerText = regionName;
+            const container = document.getElementById('cards-container');
+            container.innerHTML = '';
+
+            if (shops) {
+                shops.forEach((shop, index) => {
+                    const card = document.createElement('div');
+                    card.className = 'shop-card';
+                    card.onclick = () => showDetails(shop);
+                    const imgUrl = getImageUrl(shop.img);
+                    // 默认图片占位（如果 shop.img 为空）
+                    const bgStyle = imgUrl ? `background-image: url('${imgUrl}')` : '';
+                    
+                    // 动态标签样式
+                    let tagHtml = '';
+                    if (shop.tag) {
+                        const tags = shop.tag.split(',').map(t => t.trim()).filter(t => t);
+                        tags.forEach(tagName => {
+                            const tagConfig = (DB.tags || []).find(t => t.name === tagName);
+                            const tagColor = tagConfig ? tagConfig.color : '#d4a373';
+                            const tagBg = tagConfig ? tagConfig.bg_color : 'rgba(212, 163, 115, 0.1)';
+                            tagHtml += `<div class="shop-tag" style="color: ${tagColor}; background-color: ${tagBg}; margin-right: 4px;">${tagName}</div>`;
+                        });
+                    } else {
+                        tagHtml = '<div class="shop-tag">咖啡</div>';
+                    }
+
+                    card.innerHTML = `
+                        <div class="card-img" style="${bgStyle}">
+                             ${!imgUrl ? '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#666;font-size:12px;">暂无图片</div>' : ''}
+                            <div class="card-badge">★ ${shop.rating || '4.0'}</div>
+                        </div>
+                        <div class="card-info">
+                            <div class="shop-name">${shop.name}</div>
+                            <div class="shop-meta">
+                                ${tagHtml}
+                            </div>
+                            <div class="shop-address">${shop.address || '暂无地址信息'}</div>
+                        </div>
+                    `;
+                    container.appendChild(card);
+                });
+            } else {
+                container.innerHTML = '<div style="color:#888; padding:10px;">暂无商家数据</div>';
+            }
+        }
+
+        function hideBottomSlider() {
+            document.getElementById('bottom-slider').classList.remove('active');
+            // 恢复退出复位逻辑，并保持与初始视图一致
+            if (map && bounds && initialZoom) {
+                // 使用统一的 safeFlyTo 逻辑
+                safeFlyTo(bounds.getCenter(), initialZoom);
+            }
+        }
+        window.hideBottomSlider = hideBottomSlider;
+
+        function bd09ToGcj02(bd_lat, bd_lon) {
+            var x_pi = 3.14159265358979324 * 3000.0 / 180.0;
+            var x = bd_lon - 0.0065;
+            var y = bd_lat - 0.006;
+            var z = Math.sqrt(x * x + y * y) - 0.00002 * Math.sin(y * x_pi);
+            var theta = Math.atan2(y, x) - 0.000003 * Math.cos(x * x_pi);
+            var gg_lng = z * Math.cos(theta);
+            var gg_lat = z * Math.sin(theta);
+            return { lat: gg_lat, lng: gg_lng };
+        }
+
+        function showDetails(shop) {
+            document.getElementById('detail-title').innerText = shop.name;
+            
+            // Rebuild meta tags
+            let tagHtml = '';
+            if (shop.tag) {
+                const tags = shop.tag.split(',').map(t => t.trim()).filter(t => t);
+                tags.forEach(tagName => {
+                    const tagConfig = (DB.tags || []).find(t => t.name === tagName);
+                    const tagColor = tagConfig ? tagConfig.color : '#888';
+                    const tagBg = tagConfig ? tagConfig.bg_color : '#222';
+                    tagHtml += `<span class="meta-tag" style="color: ${tagColor}; background-color: ${tagBg};">${tagName}</span>`;
+                });
+            } else {
+                tagHtml = '<span class="meta-tag" style="color:#888; background:#222;">暂无标签</span>';
+            }
+
+            const metaContainer = document.querySelector('.details-meta');
+            metaContainer.innerHTML = `
+                ${tagHtml}
+                <span class="meta-tag" style="color:#fff; background:#333;">${shop.rating || '0'}分</span>
+            `;
+
+            // Removed comment count (shop.desc) display
+            // document.getElementById('detail-desc').innerText = shop.desc || '暂无简介';
+            
+            // Extra info
+            const extraDiv = document.getElementById('detail-extra');
+            extraDiv.innerHTML = `
+                <div style="display:flex; margin-bottom:8px;">
+                    <span style="width:70px; color:#888;">📍 地址</span>
+                    <span style="flex:1; color:#ddd;">${shop.address || '暂无'}</span>
+                </div>
+                <div style="display:flex; margin-bottom:8px;">
+                    <span style="width:70px; color:#888;">📞 电话</span>
+                    <span style="flex:1; color:#ddd;">${shop.phone || '暂无'}</span>
+                </div>
+                <div style="display:flex; margin-bottom:8px;">
+                    <span style="width:70px; color:#888;">🕒 时间</span>
+                    <span style="flex:1; color:#ddd;">${shop.open_hours || '暂无'}</span>
+                </div>
+                <div style="display:flex; margin-bottom:8px;">
+                    <span style="width:70px; color:#888;">💰 人均</span>
+                    <span style="flex:1; color:#ddd;">${shop.price || '暂无'}</span>
+                </div>
+            `;
+
+            // --- Tencent Map Integration ---
+            // const mapContainer = document.getElementById('tencent-map');
+            const navBtn = document.getElementById('nav-btn');
+            
+            if (shop.lat && shop.lng) {
+                // Convert BD09 to GCJ02
+                const gcj = bd09ToGcj02(parseFloat(shop.lat), parseFloat(shop.lng));
+                
+                // Using Tencent Map Tools: POI Marker
+                const key = 'OB4BZ-D4W3U-B7VVO-4PJWW-6TKDJ-WPB77'; // Demo Key
+                const referer = 'CoffeeMap';
+                const location = `${gcj.lat},${gcj.lng}`;
+                const title = encodeURIComponent(shop.name);
+                const addr = encodeURIComponent(shop.address || '');
+                
+                // Iframe for display (Removed)
+                // const mapUrl = `https://apis.map.qq.com/tools/poimarker?type=0&marker=coord:${location};title:${title};addr:${addr}&key=${key}&referer=${referer}`;
+                // mapContainer.innerHTML = `<iframe width="100%" height="100%" frameborder="0" src="${mapUrl}"></iframe>`;
+                
+                // Navigation Button Action
+                navBtn.onclick = () => {
+                    const jumpToNative = () => {
+                         const navPath = `/pages/navigation/index?lat=${gcj.lat}&lng=${gcj.lng}&name=${title}&address=${addr}`;
+                         wx.miniProgram.navigateTo({ url: navPath });
+                    };
+
+                    const jumpToWeb = () => {
+                         const navUrl = `https://apis.map.qq.com/uri/v1/marker?marker=coord:${location};title:${title};addr:${addr}&referer=${referer}`;
+                         window.location.href = navUrl;
+                    };
+
+                    // Check environment
+                    if (window.__wxjs_environment === 'miniprogram') {
+                        jumpToNative();
+                    } else if (window.wx) {
+                         wx.miniProgram.getEnv(function(res) {
+                             if (res.miniprogram) {
+                                 jumpToNative();
+                             } else {
+                                 jumpToWeb();
+                             }
+                         });
+                    } else {
+                        jumpToWeb();
+                    }
+                };
+                navBtn.style.display = 'block';
+            } else {
+                // mapContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#666;">暂无坐标信息</div>';
+                navBtn.style.display = 'none';
+            }
+
+            document.getElementById('details-modal').classList.add('active');
+        }
+
+        function hideDetails() {
+            document.getElementById('details-modal').classList.remove('active');
+        }
+        window.hideDetails = hideDetails;
+
+        // Start App
+        init();
+
+    </script>
+
+    </script>
+</body>
+</html>

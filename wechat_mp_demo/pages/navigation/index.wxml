@@ -1,0 +1,5 @@
+<view class="container">
+  <view class="loading-text">正在打开地图...</view>
+  <button class="btn" bindtap="reOpen">重新打开导航</button>
+  <button class="btn btn-secondary" bindtap="goBack">返回咖啡地图</button>
+</view>

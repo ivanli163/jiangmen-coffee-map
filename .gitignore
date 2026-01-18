@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+*.xlsx
+*.db-journal
+# server/database.db
+# server/uploads/shops/
+!server/uploads/shops/.gitkeep
