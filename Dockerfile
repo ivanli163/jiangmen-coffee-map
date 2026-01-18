@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Copy server requirements
 COPY server/requirements.txt ./server/requirements.txt
-RUN pip install --no-cache-dir -r server/requirements.txt
+RUN pip install --no-cache-dir -r server/requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # Copy everything
 COPY . .
