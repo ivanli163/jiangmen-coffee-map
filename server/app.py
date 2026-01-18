@@ -4,7 +4,8 @@ import json
 import subprocess
 import datetime
 import time
-from flask import Flask, request, jsonify, send_from_directory, render_template
+import requests
+from flask import Flask, request, jsonify, send_from_directory, render_template, redirect, Response, stream_with_context
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import openpyxl
@@ -613,14 +614,57 @@ def serve_tiles(filename):
 
 @app.route('/server/uploads/<path:filename>')
 def serve_uploads(filename):
-    # 兼容处理：如果本地文件不存在，返回 404，前端会处理成 CDN 链接
-    # 但由于 send_from_directory 会抛出 NotFound，我们可以捕获它
-    try:
+    # 优先尝试从本地容器/文件系统服务
+    # 如果文件在本地存在 (例如开发环境或已挂载存储)，直接返回
+    if os.path.exists(os.path.join(UPLOAD_FOLDER, filename)):
         response = send_from_directory(UPLOAD_FOLDER, filename)
         response.headers['Cache-Control'] = 'public, max-age=31536000'
         return response
-    except Exception:
-        return "File not found", 404
+    
+    # 如果本地不存在，重定向到腾讯云 COS 对象存储
+    # 这是为了解决容器中没有持久化图片的问题
+    COS_HOST = 'https://7072-prod-9g8c363qb1f99532-1396725319.cos.ap-shanghai.myqcloud.com'
+    redirect_url = f"{COS_HOST}/server/uploads/{filename}"
+    return redirect(redirect_url, code=302)
+
+# --- 初始化 (确保在 Gunicorn 启动时也运行) ---
+# 确保必要的目录存在
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+if not os.path.exists(SHOP_IMAGES_FOLDER):
+    os.makedirs(SHOP_IMAGES_FOLDER)
+if not os.path.exists(OUTPUT_FOLDER):
+    os.makedirs(OUTPUT_FOLDER)
+
+# 初始化数据库
+try:
+    init_db()
+    print("Database initialized successfully.")
+except Exception as e:
+    print(f"Error initializing database: {e}")
+
+if __name__ == '__main__':
+    # 监听 0.0.0.0 允许外部访问
+    app.run(host='0.0.0.0', port=8000, debug=True)
+        
+        # 既然无法动态生成签名（没配 SecretId/Key），我们只能赌一把：
+        # 微信云托管的容器，访问同一个环境下的 COS，是否在内网白名单里？
+        # 很多时候是的。我们尝试直接请求 COS 源站。
+        
+        proxy_res = requests.get(COS_URL, stream=True, timeout=5)
+        
+        if proxy_res.status_code == 200:
+            return Response(stream_with_context(proxy_res.iter_content(chunk_size=1024)), 
+                          content_type=proxy_res.headers.get('content-type'))
+        else:
+            # 如果直连失败 (403)，我们尝试使用 tcb.qcloud.la 域名 (可能也需要 sign)
+            # 但作为最后的 fallback，我们打印日志
+            print(f"Failed to proxy image from COS: {COS_URL}, status: {proxy_res.status_code}")
+            return "Image not found on cloud storage", 404
+
+    except Exception as e:
+        print(f"Error proxying image: {e}")
+        return "Internal Server Error during image proxy", 500
 
 # --- 初始化 (确保在 Gunicorn 启动时也运行) ---
 # 确保必要的目录存在

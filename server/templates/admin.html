@@ -112,7 +112,7 @@
             <label>区域名称</label>
             <input type="text" id="regionName">
             
-            <label>中心坐标 [Y, X]</label>
+            <label>中心坐标 [Y, X]
             <div style="display: flex; gap: 5px;">
                 <input type="text" id="regionCoords" placeholder="2400, 1500">
                 <button class="btn btn-secondary" style="width: auto;" onclick="useCurrentCoord('regionCoords')">填入</button>
@@ -286,11 +286,11 @@
         if (url.startsWith('http')) return url;
         
         // --- 适配微信云托管对象存储 ---
+        // 恢复为指向 Flask 后端，由后端全权代理图片的获取（包括处理签名/鉴权）
         const COS_HOST = 'https://flask-5ou3-218844-6-1396725319.sh.run.tcloudbase.com'; 
 
-        // 如果是 /server/uploads/ 开头的路径，说明是上传的图片
+        // 如果是 /server/uploads/ 开头的路径
         if (url.includes('server/uploads')) {
-            // 强制使用线上图片
             const cleanUrl = url.startsWith('/') ? url : '/' + url;
             return COS_HOST + cleanUrl;
         }

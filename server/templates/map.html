@@ -589,13 +589,28 @@
             if (url.startsWith('http')) return url;
             
             // --- 适配微信云托管对象存储 ---
-            // 临时方案：使用线上运行的 Flask 服务地址作为图片源
-            // (前提是图片已包含在部署的镜像中)
+            // 使用 tcb.qcloud.la 域名 (无需签名即可访问公有读文件，或者需要我们动态获取签名)
+            // 注意：您提供的链接带有 sign 参数，说明该文件目前是私有的，需要签名。
+            // 但如果在云托管环境中，通常使用 HTTP API 或 SDK 获取临时链接。
+            // 这里我们先尝试使用后端代理模式，让后端去处理鉴权。
+            
+            // 策略调整：不再让前端直接拼接 COS 地址，而是全部走后端 /server/uploads/ 接口
+            // 后端接口现在已经配置为：如果本地没有，就重定向到 COS (但这需要 COS 是公有的)
+            // 如果 COS 是私有的（带 sign 参数），后端简单的重定向是无法生成签名的。
+
+            // 既然您发现带签名的长链接可以访问，说明：
+            // 1. Bucket 是私有的。
+            // 2. 必须带 sign 参数才能访问。
+            
+            // 最佳方案：
+            // 让后端 (Flask) 读取图片流并返回给前端 (Proxy Mode)。
+            // 这样前端只需要访问 /server/uploads/xxx，不需要关心签名。
+            
+            // 所以，这里我们恢复为：指向 Flask 服务地址
             const COS_HOST = 'https://flask-5ou3-218844-6-1396725319.sh.run.tcloudbase.com'; 
 
-            // 如果是 /server/uploads/ 开头的路径，说明是上传的图片
+            // 如果是 /server/uploads/ 开头的路径
             if (url.includes('server/uploads')) {
-                // 强制使用线上图片 (解决本地 COS 访问 403 问题)
                 const cleanUrl = url.startsWith('/') ? url : '/' + url;
                 return COS_HOST + cleanUrl;
             }
