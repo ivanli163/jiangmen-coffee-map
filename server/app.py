@@ -622,14 +622,22 @@ def serve_uploads(filename):
     except Exception:
         return "File not found", 404
 
-if __name__ == '__main__':
-    if not os.path.exists(UPLOAD_FOLDER):
-        os.makedirs(UPLOAD_FOLDER)
-    if not os.path.exists(SHOP_IMAGES_FOLDER):
-        os.makedirs(SHOP_IMAGES_FOLDER)
-    if not os.path.exists(OUTPUT_FOLDER):
-        os.makedirs(OUTPUT_FOLDER)
-        
+# --- 初始化 (确保在 Gunicorn 启动时也运行) ---
+# 确保必要的目录存在
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+if not os.path.exists(SHOP_IMAGES_FOLDER):
+    os.makedirs(SHOP_IMAGES_FOLDER)
+if not os.path.exists(OUTPUT_FOLDER):
+    os.makedirs(OUTPUT_FOLDER)
+
+# 初始化数据库
+try:
     init_db()
+    print("Database initialized successfully.")
+except Exception as e:
+    print(f"Error initializing database: {e}")
+
+if __name__ == '__main__':
     # 监听 0.0.0.0 允许外部访问
     app.run(host='0.0.0.0', port=8000, debug=True)
