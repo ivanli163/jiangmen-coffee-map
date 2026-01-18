@@ -1,0 +1,57 @@
+name: Deploy to WeChat Cloud Hosting
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  # 替换为您的云托管环境 ID
+  ENV_ID: prod-9g8c363qb1f99532
+  # 替换为您在云托管中设置的服务名称
+  SERVICE_NAME: coffee-map
+  # 镜像名称 (通常是 ccr.ccs.tencentyun.com/您的命名空间/服务名)
+  # 您可以在 容器服务 -> 镜像仓库 中找到
+  IMAGE_NAME: ccr.ccs.tencentyun.com/tcb-prod-9g8c363qb1f99532/coffee-map
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    # 1. 设置 QEMU (如果需要构建多架构镜像)
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v2
+
+    # 2. 设置 Docker Buildx
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    # 3. 登录腾讯云容器镜像服务 (TCR)
+    # 需要在 GitHub 仓库 Settings -> Secrets 中设置 TENCENT_CLOUD_USERNAME 和 TENCENT_CLOUD_PASSWORD
+    # 用户名通常是您的腾讯云账号 ID (root 账号) 或协作者 ID
+    # 密码是您在 TCR 控制台设置的访问凭证
+    - name: Login to Tencent Cloud Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ccr.ccs.tencentyun.com
+        username: ${{ secrets.TENCENT_CLOUD_USERNAME }}
+        password: ${{ secrets.TENCENT_CLOUD_PASSWORD }}
+
+    # 4. 构建并推送镜像
+    - name: Build and push
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: true
+        tags: ${{ env.IMAGE_NAME }}:${{ github.sha }},${{ env.IMAGE_NAME }}:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    # 5. 调用微信云托管 API 触发重新部署 (可选)
+    # 这一步比较复杂，通常微信云托管配置了"镜像更新自动部署"后，只需要 Push 镜像即可。
+    # 如果没有配置自动部署，可以使用腾讯云 CLI (tccli) 或 HTTP 请求触发。
+    # 这里建议在云托管控制台开启 "版本管理 -> 自动构建/部署 -> 监听镜像更新"
