@@ -286,22 +286,13 @@
         if (url.startsWith('http')) return url;
         
         // --- 适配微信云托管对象存储 ---
-        // 务必替换下方的域名为您自己的环境域名！
-        const COS_HOST = 'https://prod-9g8c363qb1f99532.tcloudbaseapp.com'; 
+        const COS_HOST = 'https://flask-5ou3-218844-6-1396725319.sh.run.tcloudbase.com'; 
 
         // 如果是 /server/uploads/ 开头的路径，说明是上传的图片
         if (url.includes('server/uploads')) {
-            // 如果当前是本地环境 (127.0.0.1 或 localhost)，仍然尝试本地访问 (以便开发)
-            if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
-                 // 保持原样，走 Flask 静态文件服务
-                 // 如果 url 没有以 / 开头，补上
-                 return url.startsWith('/') ? url : '/' + url;
-            } else {
-                 // 线上环境：替换为 COS 域名
-                 // 确保 url 开头没有 / (如果 COS_HOST 结尾没 /)
-                 const cleanUrl = url.startsWith('/') ? url : '/' + url;
-                 return COS_HOST + cleanUrl;
-            }
+            // 强制使用线上图片
+            const cleanUrl = url.startsWith('/') ? url : '/' + url;
+            return COS_HOST + cleanUrl;
         }
         
         return url;

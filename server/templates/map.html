@@ -589,23 +589,15 @@
             if (url.startsWith('http')) return url;
             
             // --- 适配微信云托管对象存储 ---
-            // 请在“云托管控制台 -> 对象存储 -> 存储配置”中获取默认域名 (例如 https://<EnvID>.tcloudbaseapp.com)
-            // 务必替换下方的域名为您自己的环境域名！
-            // 为了兼容本地开发，如果本地访问则不使用 COS
-            const COS_HOST = 'https://prod-9g8c363qb1f99532.tcloudbaseapp.com'; 
+            // 临时方案：使用线上运行的 Flask 服务地址作为图片源
+            // (前提是图片已包含在部署的镜像中)
+            const COS_HOST = 'https://flask-5ou3-218844-6-1396725319.sh.run.tcloudbase.com'; 
 
             // 如果是 /server/uploads/ 开头的路径，说明是上传的图片
             if (url.includes('server/uploads')) {
-                // 如果当前是本地环境 (127.0.0.1 或 localhost)，仍然尝试本地访问 (以便开发)
-                if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
-                     // 保持原样，走 Flask 静态文件服务
-                } else {
-                     // 线上环境：替换为 COS 域名
-                     // 确保 url 开头没有 / (如果 COS_HOST 结尾没 /)
-                     // 简单处理：拼接
-                     const cleanUrl = url.startsWith('/') ? url : '/' + url;
-                     return COS_HOST + cleanUrl;
-                }
+                // 强制使用线上图片 (解决本地 COS 访问 403 问题)
+                const cleanUrl = url.startsWith('/') ? url : '/' + url;
+                return COS_HOST + cleanUrl;
             }
 
             // 检查是否有 image_host 参数 (或复用 tile_host)
